@@ -204,35 +204,57 @@ class SliceView(QFrame):
     # ------------------------------------------------------------------
 
     def _make_reslice_matrix(self) -> vtk.vtkMatrix4x4:
-        """Return the reslice axes matrix for this view's orientation."""
+        """Return the reslice axes matrix for this view's orientation.
+
+        The matrix maps output coordinates to input (VTK image) coordinates.
+        VTK image axes: X = K (cols), Y = J (rows), Z = I (slices).
+
+        For each view the output Z (normal) must point along the axis
+        we are slicing through:
+          Axial   → normal along Z (I)
+          Coronal → normal along Y (J)
+          Sagittal→ normal along X (K)
+        """
         m = vtk.vtkMatrix4x4()
         m.Identity()
-        if self.axis == 0:   # Axial: XY plane
-            pass             # Identity is already XY
-        elif self.axis == 1:  # Coronal: XZ plane
-            m.SetElement(1, 1, 0); m.SetElement(1, 2, 1)
-            m.SetElement(2, 1, -1); m.SetElement(2, 2, 0)
-        else:                 # Sagittal: YZ plane
-            m.SetElement(0, 0, 0); m.SetElement(0, 1, 1)
-            m.SetElement(1, 0, -1); m.SetElement(1, 1, 0)
+        if self.axis == 0:    # Axial: XY plane, normal = Z
+            pass              # Identity is already correct
+        elif self.axis == 1:  # Coronal: XZ plane, normal = Y
+            # output X → input X,  output Y → input Z,  output Z → input -Y
+            m.SetElement(1, 1, 0); m.SetElement(1, 2, -1)
+            m.SetElement(2, 1, 1); m.SetElement(2, 2, 0)
+        else:                 # Sagittal: YZ plane, normal = X
+            # output X → input Y,  output Y → input Z,  output Z → input X
+            m.SetElement(0, 0, 0); m.SetElement(0, 2, 1)
+            m.SetElement(1, 0, 1); m.SetElement(1, 1, 0)
+            m.SetElement(2, 1, 1); m.SetElement(2, 2, 0)
         return m
 
     def _update_reslice_position(self, i: int, j: int, k: int) -> None:
-        """Move the reslice plane to the current crosshair position."""
+        """Move the reslice plane to the current crosshair position.
+
+        The origin must be placed along the correct INPUT axis:
+          Axial   → origin along input Z  (VTK Z = I axis)
+          Coronal → origin along input Y  (VTK Y = J axis)
+          Sagittal→ origin along input X  (VTK X = K axis)
+        """
         if self._volume is None:
             return
         sp = self._volume.spacing
-        if self.axis == 0:
-            z = i * sp[0]
-        elif self.axis == 1:
-            z = j * sp[1]
-        else:
-            z = k * sp[2]
 
         m = self._make_reslice_matrix()
+        # Start with origin at (0, 0, 0); set the slice-axis component.
         m.SetElement(0, 3, 0)
         m.SetElement(1, 3, 0)
-        m.SetElement(2, 3, z)
+        m.SetElement(2, 3, 0)
+
+        if self.axis == 0:       # Axial: move along VTK Z (I)
+            m.SetElement(2, 3, i * sp[0])
+        elif self.axis == 1:     # Coronal: move along VTK Y (J)
+            m.SetElement(1, 3, j * sp[1])
+        else:                    # Sagittal: move along VTK X (K)
+            m.SetElement(0, 3, k * sp[2])
+
         self._reslice.SetResliceAxes(m)
         self._reslice.Update()
 
