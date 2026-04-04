@@ -143,6 +143,7 @@ class ControlPanel(QWidget):
         layout.addLayout(plane_row)
 
         self._ann_list = QListWidget()
+        self._ann_list.itemSelectionChanged.connect(self._on_ann_selected)
         layout.addWidget(self._ann_list)
 
         btn_row = QHBoxLayout()
@@ -261,6 +262,47 @@ class ControlPanel(QWidget):
         anns = self._ann_store.all()
         if anns:
             self._ann_store.remove(anns[-1].uid)
+
+    def _on_ann_selected(self) -> None:
+        if self._updating or self._volume is None:
+            return
+            
+        item = self._ann_list.currentItem()
+        if item is None:
+            return
+            
+        uid = item.data(Qt.ItemDataRole.UserRole)
+        ann = self._ann_store.get(uid)
+        if not ann:
+            return
+            
+        bb = ann.bounding_box()
+        if bb is None:
+            return
+            
+        # Center of the ROI in (u, v) display-fraction space
+        min_u, min_v, max_u, max_v = bb
+        center_u = (min_u + max_u) / 2.0
+        center_v = (min_v + max_v) / 2.0
+        
+        ni, nj, nk = self._volume.shape
+        i, j, k = self._crosshair.as_int()
+        
+        # Jump crosshair to the slice and center on the ROI
+        if ann.axis == 0:       # Axial: u=K, v=J
+            i = ann.slice_idx
+            j = int(center_v * max(nj - 1, 1))
+            k = int(center_u * max(nk - 1, 1))
+        elif ann.axis == 1:     # Coronal: u=K, v=I
+            j = ann.slice_idx
+            i = int(center_v * max(ni - 1, 1))
+            k = int(center_u * max(nk - 1, 1))
+        else:                   # Sagittal: u=J, v=I
+            k = ann.slice_idx
+            i = int(center_v * max(ni - 1, 1))
+            j = int(center_u * max(nj - 1, 1))
+            
+        self._crosshair.set(i, j, k)
 
     def _on_save(self) -> None:
         from PyQt6.QtWidgets import QFileDialog
