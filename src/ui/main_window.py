@@ -103,6 +103,10 @@ class MainWindow(QMainWindow):
         self._panel.save_requested.connect(self._save_annotations)
         self._panel.load_requested.connect(self._load_annotations)
         self._panel.setFixedWidth(240)
+        
+        # Connect view_focused to panel's plane combobox
+        for view in self._views:
+            view.view_focused.connect(self._panel._plane_combo.setCurrentIndex)
 
         root.addWidget(splitter, stretch=3)
         root.addWidget(self._panel, stretch=0)

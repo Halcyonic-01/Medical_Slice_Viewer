@@ -66,6 +66,7 @@ class SliceView(QFrame):
     """
 
     crosshair_moved = pyqtSignal(int, int, int)   # (i, j, k) voxel indices
+    view_focused = pyqtSignal(int)                # Emitted with self.axis when view is clicked
 
     def __init__(
         self,
@@ -420,6 +421,7 @@ class SliceView(QFrame):
         i, j, k = self._display_to_voxel(x, y)
         self._crosshair.set(i, j, k)
         self.crosshair_moved.emit(i, j, k)
+        self.view_focused.emit(self.axis)
         self._drawing = True
 
     def _on_mouse_move(self, obj, event) -> None:

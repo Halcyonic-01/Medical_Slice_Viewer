@@ -1,0 +1,1 @@
+Crosshair after selection: (10, 10, 10)
