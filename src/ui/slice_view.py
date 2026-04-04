@@ -148,12 +148,14 @@ class SliceView(QFrame):
         self._renderer.AddActor(self._ch_h_actor)
         self._renderer.AddActor(self._ch_v_actor)
 
-        # Interactor style: image (pan/zoom only; clicks handled by us)
+        # Interactor style: image (pan/zoom; clicks & scroll handled by us)
         style = vtk.vtkInteractorStyleImage()
         self._vtk_widget.SetInteractorStyle(style)
         self._vtk_widget.AddObserver("LeftButtonPressEvent", self._on_click)
         self._vtk_widget.AddObserver("MouseMoveEvent", self._on_mouse_move)
         self._vtk_widget.AddObserver("LeftButtonReleaseEvent", self._on_release)
+        self._vtk_widget.AddObserver("MouseWheelForwardEvent", self._on_scroll_fwd)
+        self._vtk_widget.AddObserver("MouseWheelBackwardEvent", self._on_scroll_bwd)
 
         self._vtk_widget.Initialize()
 
@@ -282,6 +284,32 @@ class SliceView(QFrame):
         actor.GetProperty().SetOpacity(0.6)
         return actor
 
+    def _voxel_to_display_frac(self) -> Tuple[float, float]:
+        """Return the (u, v) display fraction of the current crosshair."""
+        ci, cj, ck = self._crosshair.as_int()
+        ni, nj, nk = self._volume.shape
+        if self.axis == 0:
+            u = ck / max(nk - 1, 1)
+            v = cj / max(nj - 1, 1)
+        elif self.axis == 1:
+            u = ck / max(nk - 1, 1)
+            v = ci / max(ni - 1, 1)
+        else:
+            u = cj / max(nj - 1, 1)
+            v = ci / max(ni - 1, 1)
+        return u, v
+
+    def _frac_to_display(self, u_frac: float, v_frac: float) -> Tuple[int, int]:
+        """Convert image fraction [0,1] to display pixel, accounting for camera."""
+        bounds = self._image_actor.GetBounds()
+        wx = bounds[0] + u_frac * (bounds[1] - bounds[0])
+        wy = bounds[2] + v_frac * (bounds[3] - bounds[2])
+        coord = vtk.vtkCoordinate()
+        coord.SetCoordinateSystemToWorld()
+        coord.SetValue(wx, wy, 0)
+        dp = coord.GetComputedDisplayValue(self._renderer)
+        return int(dp[0]), int(dp[1])
+
     def _update_crosshair_lines(self) -> None:
         """Reposition the 2-D crosshair lines to match the current cursor."""
         if self._volume is None:
@@ -289,21 +317,8 @@ class SliceView(QFrame):
         size = self._vtk_widget.GetRenderWindow().GetSize()
         w, h = size[0], size[1]
 
-        ci, cj, ck = self._crosshair.as_int()
-        ni, nj, nk = self._volume.shape
-
-        # Map voxel index to display fraction
-        if self.axis == 0:
-            u_frac = ck / max(nk - 1, 1)
-            v_frac = cj / max(nj - 1, 1)
-        elif self.axis == 1:
-            u_frac = ck / max(nk - 1, 1)
-            v_frac = ci / max(ni - 1, 1)
-        else:
-            u_frac = cj / max(nj - 1, 1)
-            v_frac = ci / max(ni - 1, 1)
-
-        px, py = int(u_frac * w), int(v_frac * h)
+        u_frac, v_frac = self._voxel_to_display_frac()
+        px, py = self._frac_to_display(u_frac, v_frac)
 
         # Horizontal line
         h_pts = self._ch_h_actor.GetMapper().GetInput().GetPoints()
@@ -357,14 +372,31 @@ class SliceView(QFrame):
     # ------------------------------------------------------------------
 
     def _display_to_voxel(self, x: int, y: int) -> Tuple[int, int, int]:
-        """Convert display pixel (x, y) to voxel indices (i, j, k)."""
+        """Convert display pixel (x, y) to voxel indices (i, j, k).
+
+        Uses VTK coordinate conversion so the mapping stays correct
+        after camera pan/zoom.
+        """
         if self._volume is None:
             return 0, 0, 0
-        size = self._vtk_widget.GetRenderWindow().GetSize()
-        w, h = size[0], size[1]
+
+        # Display → world (accounts for camera zoom/pan)
+        coord = vtk.vtkCoordinate()
+        coord.SetCoordinateSystemToDisplay()
+        coord.SetValue(x, y, 0)
+        world = coord.GetComputedWorldValue(self._renderer)
+
+        # World → normalised image fraction via actor bounds
+        bounds = self._image_actor.GetBounds()
+        x_range = bounds[1] - bounds[0]
+        y_range = bounds[3] - bounds[2]
+        if x_range < 1e-6 or y_range < 1e-6:
+            return 0, 0, 0
+
+        u = max(0.0, min(1.0, (world[0] - bounds[0]) / x_range))
+        v = max(0.0, min(1.0, (world[1] - bounds[2]) / y_range))
+
         ni, nj, nk = self._volume.shape
-        u = x / max(w - 1, 1)
-        v = y / max(h - 1, 1)
         if self.axis == 0:
             k = int(u * (nk - 1))
             j = int(v * (nj - 1))
@@ -400,6 +432,31 @@ class SliceView(QFrame):
     def _on_release(self, obj, event) -> None:
         self._drawing = False
 
+    def _on_scroll_fwd(self, obj, event) -> None:
+        """Scroll wheel forward → next slice."""
+        if self._volume is None:
+            return
+        ci, cj, ck = self._crosshair.as_int()
+        ni, nj, nk = self._volume.shape
+        if self.axis == 0:
+            self._crosshair.set(min(ci + 1, ni - 1), cj, ck)
+        elif self.axis == 1:
+            self._crosshair.set(ci, min(cj + 1, nj - 1), ck)
+        else:
+            self._crosshair.set(ci, cj, min(ck + 1, nk - 1))
+
+    def _on_scroll_bwd(self, obj, event) -> None:
+        """Scroll wheel backward → previous slice."""
+        if self._volume is None:
+            return
+        ci, cj, ck = self._crosshair.as_int()
+        if self.axis == 0:
+            self._crosshair.set(max(ci - 1, 0), cj, ck)
+        elif self.axis == 1:
+            self._crosshair.set(ci, max(cj - 1, 0), ck)
+        else:
+            self._crosshair.set(ci, cj, max(ck - 1, 0))
+
     # ------------------------------------------------------------------
     # Annotation rendering
     # ------------------------------------------------------------------
@@ -429,17 +486,12 @@ class SliceView(QFrame):
         if len(ann.points) < 2:
             return None
 
-        size = self._vtk_widget.GetRenderWindow().GetSize()
-        w, h = size[0], size[1]
-        ni, nj, nk = self._volume.shape if self._volume else (1, 1, 1)
-
         pts = vtk.vtkPoints()
         cells = vtk.vtkCellArray()
         n = len(ann.points)
         cells.InsertNextCell(n + 1)
         for idx, (u_frac, v_frac) in enumerate(ann.points):
-            px = u_frac * w
-            py = v_frac * h
+            px, py = self._frac_to_display(u_frac, v_frac)
             pts.InsertNextPoint(px, py, 0)
             cells.InsertCellPoint(idx)
         cells.InsertCellPoint(0)  # close the loop

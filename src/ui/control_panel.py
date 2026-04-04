@@ -15,6 +15,7 @@ from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
+    QComboBox,
     QDoubleSpinBox,
     QGroupBox,
     QHBoxLayout,
@@ -131,6 +132,16 @@ class ControlPanel(QWidget):
         grp = QGroupBox("Annotations")
         layout = QVBoxLayout(grp)
 
+        # Plane selector for new ROIs
+        plane_row = QHBoxLayout()
+        plane_row.addWidget(QLabel("Plane:"))
+        self._plane_combo = QComboBox()
+        self._plane_combo.addItem("Axial", 0)
+        self._plane_combo.addItem("Coronal", 1)
+        self._plane_combo.addItem("Sagittal", 2)
+        plane_row.addWidget(self._plane_combo)
+        layout.addLayout(plane_row)
+
         self._ann_list = QListWidget()
         layout.addWidget(self._ann_list)
 
@@ -206,11 +217,23 @@ class ControlPanel(QWidget):
 
         i, j, k = self._crosshair.as_int()
         ni, nj, nk = self._volume.shape
+        axis = self._plane_combo.currentData()
 
-        # Create a small default ROI around the current crosshair position.
-        # Points are normalized in [0, 1] for display-space rendering.
-        u_center = k / max(nk - 1, 1)
-        v_center = j / max(nj - 1, 1)
+        # Compute ROI center in display-space [0, 1] based on the
+        # selected plane.  Each view maps two of (i, j, k) to (u, v).
+        if axis == 0:       # Axial: u=K, v=J
+            u_center = k / max(nk - 1, 1)
+            v_center = j / max(nj - 1, 1)
+            slice_idx = i
+        elif axis == 1:     # Coronal: u=K, v=I
+            u_center = k / max(nk - 1, 1)
+            v_center = i / max(ni - 1, 1)
+            slice_idx = j
+        else:               # Sagittal: u=J, v=I
+            u_center = j / max(nj - 1, 1)
+            v_center = i / max(ni - 1, 1)
+            slice_idx = k
+
         half_size = 0.05
         u0 = max(0.0, u_center - half_size)
         u1 = min(1.0, u_center + half_size)
@@ -219,8 +242,8 @@ class ControlPanel(QWidget):
 
         ann = Annotation(
             ann_type=AnnotationType.FREEHAND,
-            axis=0,
-            slice_idx=i,
+            axis=axis,
+            slice_idx=slice_idx,
             points=[(u0, v0), (u1, v0), (u1, v1), (u0, v1)],
             label=f"ROI-{len(self._ann_store.all()) + 1}",
         )

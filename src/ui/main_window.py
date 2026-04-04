@@ -123,6 +123,13 @@ class MainWindow(QMainWindow):
         file_menu.addAction(quit_act)
 
         ann_menu = bar.addMenu("&Annotations")
+        add_act = QAction("&Add ROI", self)
+        add_act.setShortcut("Ctrl+A")
+        add_act.triggered.connect(self._add_roi_shortcut)
+        ann_menu.addAction(add_act)
+
+        ann_menu.addSeparator()
+
         save_act = QAction("&Save…", self)
         save_act.setShortcut("Ctrl+S")
         save_act.triggered.connect(self._save_annotations_dialog)
@@ -241,6 +248,10 @@ class MainWindow(QMainWindow):
             self._status.showMessage(f"Annotations loaded from {path}")
         except Exception as exc:
             QMessageBox.critical(self, "Load Error", str(exc))
+
+    def _add_roi_shortcut(self) -> None:
+        """Trigger adding an ROI via keyboard shortcut."""
+        self._panel._on_add_ann()
 
     # ------------------------------------------------------------------
     # Crosshair
