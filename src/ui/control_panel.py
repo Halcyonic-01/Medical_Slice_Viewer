@@ -45,10 +45,12 @@ class ControlPanel(QWidget):
     -------
     save_requested : str  → path chosen by user
     load_requested : str  → path chosen by user
+    ann_selected : str    → UID of selected annotation
     """
 
     save_requested = pyqtSignal(str)
     load_requested = pyqtSignal(str)
+    ann_selected = pyqtSignal(str)
 
     def __init__(
         self,
@@ -303,6 +305,7 @@ class ControlPanel(QWidget):
             j = int(center_u * max(nj - 1, 1))
             
         self._crosshair.set(i, j, k)
+        self.ann_selected.emit(uid)
 
     def _on_save(self) -> None:
         from PyQt6.QtWidgets import QFileDialog

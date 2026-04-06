@@ -102,6 +102,7 @@ class MainWindow(QMainWindow):
         )
         self._panel.save_requested.connect(self._save_annotations)
         self._panel.load_requested.connect(self._load_annotations)
+        self._panel.ann_selected.connect(self._on_ann_selected)
         self._panel.setFixedWidth(240)
         
         # Connect view_focused to panel's plane combobox
@@ -110,6 +111,11 @@ class MainWindow(QMainWindow):
 
         root.addWidget(splitter, stretch=3)
         root.addWidget(self._panel, stretch=0)
+
+    def _on_ann_selected(self, uid: str) -> None:
+        """Propagate selected annotation UID to all views for highlighting."""
+        for view in self._views:
+            view.set_selected_annotation(uid)
 
     def _build_menu(self) -> None:
         bar = self.menuBar()

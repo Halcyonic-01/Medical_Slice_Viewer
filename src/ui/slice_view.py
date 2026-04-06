@@ -508,11 +508,23 @@ class SliceView(QFrame):
 
         actor = vtk.vtkActor2D()
         actor.SetMapper(mapper)
-        r, g, b, a = ann.color
-        actor.GetProperty().SetColor(r, g, b)
-        actor.GetProperty().SetOpacity(a)
-        actor.GetProperty().SetLineWidth(2)
+        
+        if getattr(self, "_selected_ann", None) == ann.uid:
+            actor.GetProperty().SetColor(1.0, 0.0, 0.0)  # Red
+            actor.GetProperty().SetLineWidth(3)
+        else:
+            r, g, b, a = ann.color
+            actor.GetProperty().SetColor(r, g, b)
+            actor.GetProperty().SetOpacity(a)
+            actor.GetProperty().SetLineWidth(2)
+            
         return actor
+
+    def set_selected_annotation(self, uid: str) -> None:
+        """Update the active annotation, redrawing to show highlighting."""
+        self._selected_ann = uid
+        self._redraw_annotations()
+        self._vtk_widget.GetRenderWindow().Render()
 
     # ------------------------------------------------------------------
     # Qt lifecycle
