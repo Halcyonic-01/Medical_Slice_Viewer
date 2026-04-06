@@ -358,6 +358,7 @@ class SliceView(QFrame):
         ci, cj, ck = self._crosshair.as_int()
         self._update_reslice_position(ci, cj, ck)
         self._update_crosshair_lines()
+        self._redraw_annotations()
         self._vtk_widget.GetRenderWindow().Render()
 
     def _on_wl_changed(self) -> None:
